@@ -41,6 +41,8 @@ The document is intentionally self-contained so that product managers, functiona
 - Job/role-based succession planning.
 - Multiple successor nominations per target.
 - Manual worker nomination.
+- Lightweight employee aspiration and target-role interest confirmation.
+- Lightweight development actions linked to a nomination or candidate assessment.
 - Configurable readiness, criticality, performance, potential, role-fit, and risk scales.
 - Critical job and critical position designation.
 - Candidate ranking and readiness assessment.
@@ -93,6 +95,8 @@ Talent pools can be introduced in Version 2 without redesigning the core model. 
 | 9-box matrix | A configurable matrix that normally plots performance on the horizontal axis and potential on the vertical axis. |
 | Recommendation | A system-generated, explainable candidate suggestion. It is not a nomination until a planner accepts it. |
 | Coverage | Whether a succession target has enough approved nominees at the required readiness levels. |
+| Employee aspiration | A worker-confirmed, effective-dated statement of interest in a Job, Position, role family, or career direction, with controlled visibility. |
+| Development action | A lightweight, owned action that addresses an assessment or readiness gap by a target date without replacing Dynamics HR learning, goal, or worker-action ownership. |
 
 ---
 
@@ -126,6 +130,7 @@ Talent pools can be introduced in Version 2 without redesigning the core model. 
 | Job family, job function, job type | Search filters and recommendation features. |
 | Job skills and Skill mapping | Required skill definitions. |
 | Skills and Skill competency | Worker capability evidence and proficiency. |
+| Skill types, skill levels, and skill mapping | Existing Dynamics HR configuration for grouping skills, expressing proficiency, and relating required Job skills to worker evidence. |
 | Rating models and Rating levels | Shared scale foundation, extended with succession purposes. |
 | Performance reviews/Discussions | Completed performance rating and competency evidence. |
 | Review competencies | Competency assessment evidence. |
@@ -149,6 +154,8 @@ Talent pools can be introduced in Version 2 without redesigning the core model. 
 | Rating Level | Normalized score, display order, color, active dates, and matrix band mapping support. |
 | Performance Review | Read-only relation to candidate assessment/calibration source; no calibrated value should overwrite the review. |
 | Goal/Review Goal | Ensure weight, achieved score, target, actual, status, and review-period context are exposed to succession assessment. |
+| Job skills and Skill mapping | Add no parallel skill master; expose required/desirable designation, required proficiency, and mapping identifiers needed for target comparison. |
+| Skills and Skill competency | Add no parallel worker-skill store; expose proficiency, verification/source, assessment date, and expiry where the existing record supports them. |
 | Worker page | Read-only secured succession summary and navigation, without storing succession state on Worker. |
 
 ### 5.3 New Entities
@@ -164,6 +171,8 @@ Talent pools can be introduced in Version 2 without redesigning the core model. 
 | Succession Plan Review | Periodic plan health review. |
 | Candidate Assessment | Evidence snapshot and normalized assessment scores. |
 | Candidate Assessment Evidence | Trace from each score to its source record. |
+| Employee Aspiration | Effective-dated worker interest, source, confirmation state, permitted visibility, and optional target Job/Position or role family. |
+| Development Action | Gap-linked action, owner, due date, status, source module reference, and outcome used to progress readiness. |
 | Recommendation Profile | Eligibility rules, weights, and thresholds. |
 | Candidate Recommendation | Explainable recommendation result. |
 | Calibration Template | Reusable definition of dimensions, population, views, and controls. |
@@ -203,6 +212,9 @@ erDiagram
     WORKER ||--o{ SUCCESSOR_NOMINATION : nominated
     SUCCESSOR_NOMINATION ||--o{ NOMINATION_HISTORY : records
     SUCCESSOR_NOMINATION ||--o{ CANDIDATE_ASSESSMENT : evaluated_by
+    WORKER ||--o{ EMPLOYEE_ASPIRATION : confirms
+    SUCCESSOR_NOMINATION ||--o{ DEVELOPMENT_ACTION : develops
+    CANDIDATE_ASSESSMENT ||--o{ DEVELOPMENT_ACTION : identifies
 
     PERFORMANCE_REVIEW ||--o{ CANDIDATE_ASSESSMENT_EVIDENCE : supports
     GOAL ||--o{ CANDIDATE_ASSESSMENT_EVIDENCE : supports
@@ -239,6 +251,8 @@ erDiagram
 - A Calibration Result can be used as evidence in Candidate Assessment without changing the original Performance Review.
 - A Matrix Placement Snapshot references the approved assessment/calibration results that produced it.
 - A Recommendation can be accepted into a Draft Nomination; it cannot directly create an Approved Nomination.
+- Candidate interest on a nomination references the latest permitted Employee Aspiration or an authorized confirmation captured for that target; it must not be inferred from activity.
+- A Development Action must reference a nomination, Candidate Assessment, or both, and completion does not automatically change readiness or a rating.
 
 ---
 
@@ -280,6 +294,11 @@ Required settings:
 - Maximum active nominations per worker.
 - Allow tied ranking: Yes/No.
 - Require candidate interest: Yes/No.
+- Candidate-interest confirmation validity interval.
+- Allow manager-recorded interest pending employee confirmation: Yes/No.
+- Require at least one development action for configured readiness levels: Yes/No.
+- Default development-action owner.
+- Default development-action due-date interval.
 - Require approval for plans: Yes/No.
 - Require approval for nominations: Yes/No.
 - Require approval for calibration results: Yes/No.
@@ -563,6 +582,30 @@ State-transition validations:
 - Approved-rank changes create a new history record and may restart workflow.
 - Emergency successor ranking can be separate from long-term ranking if enabled.
 
+### 11.5 Employee Aspiration and Candidate Interest
+
+Version 1 must provide a lightweight, privacy-controlled indication of whether the worker is interested in the proposed target. It is not a full career marketplace.
+
+Store:
+
+- Worker.
+- Interest scope: specific Position, Job, Job family, or general career direction.
+- Interest state: Interested, Open to discuss, Not interested, Not confirmed, or Withdrawn.
+- Source: Employee, Manager recorded, HR recorded, or imported.
+- Confirmation state and confirmed by/date.
+- Effective start/end dates and review/expiry date.
+- Preferred timing and optional location or mobility note.
+- Visibility classification.
+- Related nomination when captured in context.
+
+Rules:
+
+- Manager- or HR-recorded interest remains `Not confirmed` until the employee confirms it when confirmation is required by policy.
+- AI must not infer interest, intent to leave, family status, health, or mobility constraints.
+- A worker can withdraw or update an aspiration without exposing confidential succession-plan details.
+- Candidate interest is mandatory before nomination approval only when configured; it is always rechecked before selection and placement.
+- Expired interest produces a warning and confirmation activity rather than silently becoming `Not interested`.
+
 ---
 
 ## 12. Candidate Evidence and Weighted Goals
@@ -610,17 +653,35 @@ Requirements:
 
 ### 12.3 Skills and Qualifications
 
-Skill-fit must consider both coverage and proficiency.
+Dynamics HR Job skills, Skill mapping, Skills, Skill competency, skill types, skill levels, and related worker qualification records remain authoritative. Succession consumes this configuration and evidence; it must not introduce a duplicate skill catalogue, proficiency scale, or worker skill profile.
+
+Skill-fit must consider both coverage and proficiency. A configurable mapping translates an existing Dynamics HR skill level or rating level to a normalized 0-100 value only for assessment and recommendation calculations; the mapping does not rewrite the source skill record.
 
 For each required skill:
 
+- Dynamics HR skill and mapping identifiers.
+- Target Job/Position and requirement source.
 - Required proficiency.
 - Worker proficiency.
-- Whether the skill is mandatory.
+- Whether the skill is mandatory or desirable.
+- Proficiency scale/version and normalized mapping version.
+- Verification state and assessor/source where available.
 - Evidence source and date.
 - Certification or expiry status where applicable.
+- Recency/staleness result.
+- Gap value and configured contribution to Role Fit.
 
 A mandatory missing skill can either disqualify the candidate or apply a configured penalty. The behavior is set in the Recommendation Profile.
+
+Requirements:
+
+- Resolve Position-specific requirements first, then Job skill requirements, while displaying the source of every requirement.
+- Preserve the source skill, source proficiency, mapping version, and as-of date in Candidate Assessment Evidence.
+- Distinguish missing evidence from confirmed lack of proficiency.
+- Exclude inactive, expired, unverified, or self-declared skills only according to configured policy and show the exclusion reason.
+- Allow administrators to configure skill aliases or mapping references without changing Dynamics HR master data.
+- Recalculate only Draft assessments when source skills or mappings change; approved assessments retain their snapshots.
+- Support future skill inference as an unverified suggestion requiring worker or authorized reviewer confirmation.
 
 ### 12.4 Candidate Assessment
 
@@ -640,6 +701,32 @@ Store:
 - Overall Role Fit.
 - Calculated versus overridden values.
 - Override reason and approver.
+
+### 12.5 Lightweight Development Actions
+
+An authorized user can create a Development Action from a nomination, readiness gap, Candidate Assessment, 9-box recommended action, or approved AI suggestion.
+
+Required fields:
+
+- Action ID and action type: Learning, Goal, Experience, Coaching, Mentoring, Project/stretch assignment, Qualification, or Other.
+- Worker, target Job/Position, and related nomination/assessment.
+- Gap, skill, competency, qualification, or readiness objective addressed.
+- Description and expected outcome.
+- Owner and optional supporting manager/mentor.
+- Start date, target date, completion date, status, and priority.
+- Source module record reference when an existing Dynamics HR Course, Goal, Skill, or worker action owns execution.
+- Progress note, completion evidence, and outcome.
+- Visibility classification and created/modified metadata.
+
+Statuses are `Draft -> Planned -> In Progress -> Completed`, with `Cancelled` and `Deferred` as terminal or paused outcomes.
+
+Rules:
+
+- Version 1 records and monitors the action but does not duplicate learning enrolment, performance goals, or worker actions.
+- The action can deep-link to the owning Dynamics HR record and consume its completion status where integration is available.
+- Completing an action can request evidence refresh but cannot automatically change readiness, performance, potential, or matrix placement.
+- Overdue and unowned actions appear in My Actions and plan review.
+- Employee and manager agreement is required before an AI-proposed action becomes Planned.
 
 ---
 
@@ -952,6 +1039,17 @@ All weights are configurable and must total 100%.
 6. Review outcome and next review date are saved.
 7. Material changes optionally restart approval workflow.
 
+### 16.5 Development Action Follow-Through
+
+1. Candidate Assessment identifies a readiness, skill, competency, qualification, or experience gap.
+2. Planner or manager creates an action manually or reviews an AI-proposed Draft action.
+3. Employee and manager confirm the objective, owner, and target date.
+4. The action links to an existing Dynamics HR Course, Goal, Skill, or worker action when that module owns execution.
+5. Batch monitoring creates reminders for upcoming, overdue, or blocked actions.
+6. Owner records progress or the linked source supplies completion status.
+7. Completion creates evidence-refresh activity.
+8. An authorized reviewer reassesses readiness; the action itself never changes a talent decision.
+
 ---
 
 ## 17. Workflow Requirements
@@ -999,6 +1097,8 @@ Material changes after approval include:
 - Candidate interest changed to Not Interested.
 - Mandatory qualification no longer met.
 
+Candidate interest confirmation and development-action workflow remain separate from nomination approval. Policy can block approval or selection when interest is expired/unconfirmed or required actions have no owner or target date.
+
 The workflow configuration determines whether a material change immediately restarts approval or marks the nomination `Approval required`.
 
 ### 17.4 Calibration Workflow
@@ -1024,6 +1124,7 @@ Workspace sections:
 - **Critical targets:** Position/Job, criticality, incumbent, coverage, ready-now count, owner, next review.
 - **Plans:** status, workflow, target, owner, and effective dates.
 - **Candidates:** nominations, readiness, rank, evidence freshness, and conflicts.
+- **Development:** active, overdue, blocked, and recently completed actions by candidate and target.
 - **Calibration:** sessions awaiting preparation, participation, submission, or approval.
 - **9-box:** recent approved matrices and current sessions.
 - **Analytics:** coverage and readiness summary with links to filtered lists.
@@ -1062,6 +1163,7 @@ Add a secured **Succession** FactBox showing:
 - Target, rank, readiness, and status.
 - Latest approved performance/potential evidence.
 - Development actions when available.
+- Employee aspiration/interest confirmation only where the viewer has permission; ordinary employee self-service exposes the worker's own aspiration record without exposing nominations.
 
 Access must be limited to authorized HR and planners. Employees must not see confidential nominations by default.
 
@@ -1166,6 +1268,8 @@ Apply access by:
 - Mask sensitive comments for reporting-only users.
 - Do not include protected characteristics in recommendation scoring.
 - Diversity reporting must be aggregate, secured, and subject to minimum population thresholds.
+- Employee aspiration, interest, preferred timing, and mobility notes require field-level visibility; a worker can review their own record without receiving access to a confidential nomination or plan.
+- Development-action visibility follows the owning source module and the action's classification; private mentoring or coaching notes are not assessment evidence by default.
 
 ---
 
@@ -1185,6 +1289,8 @@ Create in-app notifications and optional email/Teams delivery for:
 - Workflow is assigned, returned, approved, or rejected.
 - Calibration session is ready, due, submitted, returned, or approved.
 - Recommendation run expires or becomes stale.
+- Candidate interest confirmation is requested, expires, or is withdrawn.
+- Development action is assigned, approaching its target date, overdue, blocked, or completed.
 
 Notifications must link directly to the relevant secured record.
 
@@ -1225,6 +1331,9 @@ Required reports:
 - Stale candidate evidence.
 - Nomination changes and approvals.
 - Internal placement outcomes.
+- Candidate-interest confirmation and expiry status, subject to confidentiality.
+- Development actions by status, owner, target, gap type, due date, and readiness outcome.
+- Skill and competency gaps for critical targets using Dynamics HR source and mapping versions.
 
 ### 22.2 Calibration Reports
 
@@ -1267,6 +1376,9 @@ Provide entities for:
 - Matrix templates, cells, and placements.
 - Recommendation profiles and results.
 - Placement outcomes.
+- Employee aspirations/interest confirmations.
+- Development actions and outcomes.
+- Skill/competency assessment mappings as read-only or configuration entities without duplicating Dynamics HR skill masters.
 
 Import entities require stable alternate keys and idempotent behavior.
 
@@ -1298,6 +1410,8 @@ Publish:
 - Approved calibration result published.
 - Successor selected/placed.
 - Coverage dropped below requirement.
+- Candidate interest confirmed, expired, or withdrawn.
+- Development action assigned, overdue, completed, or cancelled.
 
 ---
 
@@ -1414,8 +1528,13 @@ Publish:
 12. Implement immutable approval snapshots.
 13. Build side-by-side candidate comparison.
 14. Add evidence refresh action and batch support.
+15. Add Dynamics HR skill/proficiency normalization mappings without duplicating skill masters.
+16. Add employee aspiration and interest confirmation history.
+17. Add lightweight Development Action entity, source-module links, status monitoring, and reminders.
 
 **Exit:** Every nomination has understandable, traceable evidence including weighted goals.
+
+The exit also requires visible candidate interest status and at least one owned, dated Development Action when policy requires it for the assigned readiness level.
 
 ### Epic 6: Workflow and Workspace MVP
 
@@ -1516,6 +1635,10 @@ Publish:
 - Plan and nomination approvals are auditable.
 - Workspace and Position/Job entry points show the same records.
 - Coverage reports distinguish plan coverage, successor coverage, and ready-now coverage.
+- Candidate interest distinguishes employee-confirmed, manager/HR-recorded, expired, withdrawn, and not-confirmed states.
+- A readiness or capability gap can create a Development Action with an owner and target date.
+- Development Action completion can request reassessment but cannot automatically change readiness.
+- Candidate comparison uses existing Dynamics HR Job skills, worker skills, proficiency configuration, and qualifications without creating a second skill master.
 
 ### 26.2 Calibration
 
@@ -1634,6 +1757,22 @@ The product must display a **Readiness check** page that reports missing prerequ
 
 **Engineering requirements:** create a tabbed parameters page, validation summary, setup progress indicator, workflow types, workflow conditions, due-date provider, escalation support, and direct navigation between parameters and workflow configuration.
 
+### 28.4A Configure Dynamics HR Skills, Competencies, Aspirations, and Development
+
+**Persona:** Human resources, performance, and succession administrator.
+
+1. Review existing Dynamics HR skill types, skills, proficiency/rating levels, Job skill mappings, worker skills, review competencies, courses, certificates, tests, education, and experience.
+2. Correct duplicate, inactive, expired, or unmapped records in their owning Dynamics HR pages rather than in Succession.
+3. Configure purpose-compatible normalization mappings from existing proficiency levels to 0-100 assessment values.
+4. Define whether each source is accepted when employee-declared, manager-assessed, verified, expired, or stale.
+5. Configure mandatory versus desirable Job skill behavior, missing-evidence handling, and qualification expiry rules.
+6. Configure employee aspiration visibility, confirmation validity, reminder cadence, and whether manager-recorded interest can remain pending confirmation.
+7. Configure Development Action types, default owners, due-date intervals, status mappings, and links to Courses, Goals, Skills, and worker actions.
+8. Run **Preview skill fit** for a sample Job or Position and inspect source identifiers, proficiency mappings, gaps, and exclusions.
+9. Run the Readiness Check and resolve missing mappings before enabling skill-weighted recommendations.
+
+**Engineering requirements:** provide a read-only source inventory, versioned normalization mapping, source-policy configuration, duplicate/unmapped warnings, preview service, deep links to owning Dynamics HR pages, Employee Aspiration and Development Action setup, and impact preview. Existing Dynamics HR records and APIs remain authoritative and retain their identifiers.
+
 ### 28.5 Configure Bell-Curve Distribution Guidelines
 
 In this document, **bell curve** means configurable distribution guidance used during calibration. It must not silently force employee ratings into a statistical normal distribution.
@@ -1745,6 +1884,11 @@ Persist company-specific values in a singleton `SuccessionParameters` record. Sh
 | Nominations / Worker limit behavior | `WorkerLimitBehavior`: enum Warn, Block | Warn | Determines validation severity |
 | Nominations / Allow tied rank | `AllowTiedRanking`: Boolean | No | Controls rank uniqueness validation |
 | Nominations / Candidate interest required | `RequireCandidateInterest`: Boolean | No | Makes interest mandatory before approval |
+| Nominations / Interest validity | `CandidateInterestValidityDays`: integer 1-1095 | 365 | Determines when confirmation becomes expired and requires refresh |
+| Nominations / Manager-recorded interest | `AllowPendingManagerInterest`: Boolean | Yes | Permits Not confirmed interest without treating it as employee consent |
+| Development / Action required | `RequireDevelopmentAction`: Boolean | No | Requires an owned, dated action for configured readiness levels |
+| Development / Default owner | `DefaultDevelopmentOwner`: Manager, Plan owner, HRBP | Manager | Prefills responsibility while allowing authorized change |
+| Development / Default due interval | `DevelopmentActionDueDays`: integer 1-1095 | 180 | Prefills target date and reminder schedule |
 | Coverage / Required successors | `DefaultRequiredSuccessorCount`: integer 0–99 | 2 | Sets target coverage denominator/default |
 | Coverage / Required ready-now | `DefaultReadyNowCount`: integer 0–99 | 1; cannot exceed required successors | Determines ready-now coverage status |
 | Coverage / Count only approved | `CoverageApprovedOnly`: Boolean | Yes | Excludes Draft/Proposed nominees from coverage |
@@ -2144,6 +2288,37 @@ Activities must carry record context, due date, owner, priority, status, deep li
 
 Automation should remove repetitive preparation and monitoring while retaining human accountability for consequential talent decisions. Each automation has a trigger, eligibility check, proposed action, confidence/explanation, human control, and audit result.
 
+### 31.0 AI and Agent Use Cases
+
+| Agent | Purpose | Human control |
+| --- | --- | --- |
+| Critical Role Discovery Agent | Detects roles with high vacancy impact, scarce skills, knowledge concentration, or weak coverage. | HR approves criticality. |
+| Candidate Discovery Agent | Finds permitted internal candidates in Version 1 and can include permitted external candidates when that roadmap capability is enabled. | Manager/planner selects candidates and creates nominations. |
+| Evidence Agent | Builds an evidence-backed readiness summary from approved Dynamics HR reviews, goals, skills, competencies, qualifications, and experience. | User validates sources and corrections. |
+| Succession Planning Agent | Drafts plans, detects coverage and readiness gaps, and proposes actions. | Plan owner reviews and approves through workflow. |
+| Calibration Preparation Agent | Identifies missing evidence, outliers, rating inconsistencies, and participant needs. | Facilitator freezes population and opens the session. |
+| Calibration Meeting Copilot | Summarizes permitted discussion, records proposed decisions, and tracks unresolved items. | Participants confirm summaries and authorized users make rating decisions. |
+| Coverage Recovery Agent | Finds alternatives for uncovered or single-successor targets after a candidate or incumbent change. | HR/plan owner approves changes. |
+| Development Action Agent | Converts verified readiness gaps into Draft learning, goal, project, coaching, mentoring, or qualification actions. | Employee and manager agree before the action becomes Planned. |
+| Scenario Planning Agent | Simulates successor moves, downstream vacancies, coverage changes, skill gaps, and readiness impact. | Executive chooses a scenario; HR executes worker actions. |
+| Approval Brief Agent | Produces concise evidence, changes, risks, exceptions, and questions for an approver. | Approver remains accountable for the decision. |
+| Engagement Agent | Sends personalized, secure nudges and follow-ups for confirmations, reviews, evidence, and development actions. | Administrator configures frequency, channels, quiet hours, and escalation. |
+| Fairness Monitor | Detects adverse impact, representation gaps, proxy risk, inconsistent access to development, and subgroup outcome disparity. | Authorized HR/ethics reviewers investigate; it never changes an individual decision. |
+| Configuration Validator | Tests rating models, mappings, permissions, workflows, effective dates, thresholds, and dependencies. | Deterministic validation is authoritative; administrator publishes. |
+| Outcome Learning Agent | Measures whether recommendations, development actions, and placements improved readiness, retention, and role outcomes. | Governed review approves any proposed model or configuration update. |
+
+Every AI recommendation or agent proposal must include:
+
+- Evidence references and source dates.
+- Confidence level and the basis for confidence.
+- Missing, stale, contradictory, or excluded information.
+- Reason for the recommendation and component contribution where scoring applies.
+- Alternative candidates, configurations, scenarios, or actions considered.
+- Bias, fairness, protected-field, and proxy checks appropriate to the use case.
+- The required human checkpoint and accountable role.
+- Immutable audit record containing model, prompt/template, configuration, and engine versions.
+- A visible distinction between generated suggestions, inferred/unverified data, and recorded facts.
+
 ### 31.1 Automatic Workflow Catalogue
 
 | Workflow | Trigger | Automatic work | Human checkpoint | Result |
@@ -2194,6 +2369,7 @@ AI must not:
 - Provide human review queues for all consequential proposals.
 - Monitor acceptance rate, correction rate, subgroup outcome disparity, unsupported claims, latency, cost, and drift.
 - Allow administrators to disable a model or automation immediately without disabling the core manual capability.
+- Treat existing Dynamics HR skills and competencies as recorded facts only when their source and verification state support that designation; inferred skills remain suggestions until confirmed.
 
 ### 31.4 Recommended Automation Sequence
 
@@ -2315,6 +2491,17 @@ Future capabilities make it possible to validate decisions using:
 
 These measures must improve configuration over time, but historical decisions remain tied to their original configuration and evidence versions.
 
+### 32.8 Recommended Roadmap
+
+The roadmap preserves the foundation-first approach for small and medium organizations:
+
+1. **Version 1 foundation:** governed Succession, distinct Bell Curve calibration guidance, distinct 9-box review, Dynamics HR skills/competency reuse, lightweight employee aspirations, lightweight Development Actions, workflow, security, audit, reporting, and explainable rule-based recommendations.
+2. **Operational enrichment:** talent pools, external candidates, structured talent forms, richer development planning, mentorship/sponsorship, and scenario planning.
+3. **Connected talent experience:** internal mobility, career opportunities, projects, gigs, stretch assignments, employee self-service career experiences, and broader skills intelligence.
+4. **Governed agentic optimization:** grounded agents, outcome learning, fairness monitoring, and predictive methods only after sufficient quality history, legal/privacy review, and measurable controls exist.
+
+Version 1 entities must preserve stable Worker, Job, Position, Skill, Goal, Assessment, Rating, Aspiration, Development Action, Activity, and evidence references so roadmap modules extend the foundation rather than replace it.
+
 ---
 
 ## 33. Additional Acceptance Criteria for Guided and Automated Experiences
@@ -2339,6 +2526,10 @@ These measures must improve configuration over time, but historical decisions re
 - Feature flags off preserve existing performance reviews, weighted-goal calculations, worker actions, Position assignments, workflows, integrations, and reports.
 - Upgrade initializes new fields additively, assigns existing Rating Models the General purpose, grants no new confidential access, and produces no automatic talent decisions.
 - Notification and dashboard personalization respects record security, aggregate suppression, delivery preferences, and confidential-content masking.
+- Every AI or agent proposal displays evidence/source dates, confidence, missing information, rationale, alternatives, fairness checks, required human approval, and generated-versus-recorded status.
+- Employee aspiration and candidate interest cannot be inferred by AI and can be confirmed, withdrawn, expired, and secured independently of the nomination.
+- Dynamics HR skill and competency records remain authoritative; succession stores source and mapping versions in evidence rather than creating a duplicate master.
+- A Development Action always has an owner and target date before becoming Planned, and completion cannot automatically change a talent decision.
 
 ---
 
